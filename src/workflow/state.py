@@ -1,6 +1,6 @@
 """多智能体工作流状态定义。"""
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class AgentState(TypedDict, total=False):
@@ -20,3 +20,13 @@ class AgentState(TypedDict, total=False):
     revision_count: int
     # 最终输出
     final_output: str
+
+    # === 约束注入相关字段 ===
+    # 约束是否已注入
+    constraints_injected: bool
+    # 当前生效的约束规则
+    constraint_rules: dict[str, Any]
+    # 约束违规记录
+    violations: list[dict[str, Any]]
+    # 评估结果
+    evaluation_result: dict[str, Any] | None

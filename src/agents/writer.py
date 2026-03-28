@@ -1,9 +1,12 @@
 """创作智能体 - 基于收集的素材创作内容。"""
 
+from typing import Any
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.config import settings
+from src.harness.provider import get_constraint_provider
 
 # 创作智能体系统提示词
 WRITER_SYSTEM_PROMPT = """你是一个专业的创意写作者。你的任务是根据提供的素材创作精彩的内容。
@@ -20,7 +23,51 @@ WRITER_SYSTEM_PROMPT = """你是一个专业的创意写作者。你的任务是
 - 适当创新，但保持原作风格"""
 
 
-async def write(task: str, materials: str, previous_draft: str = "", feedback: str = "") -> str:
+def _build_system_prompt() -> str:
+    """构建带有约束注入的系统提示词。"""
+    provider = get_constraint_provider()
+    constraint_injection = provider.get_system_prompt_injection("writer")
+
+    if constraint_injection:
+        return f"{WRITER_SYSTEM_PROMPT}\n\n{constraint_injection}"
+    return WRITER_SYSTEM_PROMPT
+
+
+def _check_constraints(content: str, context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """检查内容是否符合约束规则。
+
+    Args:
+        content: 待检查的内容
+        context: 检查上下文
+
+    Returns:
+        违规记录列表
+    """
+    provider = get_constraint_provider()
+    checker = provider.create_checker()
+
+    violations = checker.run_all_checks(content, context)
+
+    # 转换为可序列化的字典格式
+    return [
+        {
+            "rule_name": v.rule_name,
+            "severity": v.severity.value,
+            "message": v.message,
+            "position": v.position,
+            "suggestion": v.suggestion,
+        }
+        for v in violations
+    ]
+
+
+async def write(
+    task: str,
+    materials: str,
+    previous_draft: str = "",
+    feedback: str = "",
+    check_constraints: bool = True,
+) -> tuple[str, list[dict[str, Any]]]:
     """
     根据任务和素材创作内容。
 
@@ -29,9 +76,10 @@ async def write(task: str, materials: str, previous_draft: str = "", feedback: s
         materials: 收集的参考素材
         previous_draft: 上一版草稿（修改时使用）
         feedback: 审核反馈（修改时使用）
+        check_constraints: 是否检查约束
 
     Returns:
-        创作的内容字符串
+        元组 (创作的内容, 违规记录列表)
     """
     llm = ChatOpenAI(
         base_url=settings.LLM_BASE_URL,
@@ -39,6 +87,9 @@ async def write(task: str, materials: str, previous_draft: str = "", feedback: s
         model=settings.LLM_MODEL,
         timeout=120.0,  # 创作任务需要较长超时
     )
+
+    # 构建带有约束注入的系统提示词
+    system_prompt = _build_system_prompt()
 
     if previous_draft and feedback:
         # 修改模式
@@ -64,25 +115,38 @@ async def write(task: str, materials: str, previous_draft: str = "", feedback: s
 请根据以上素材，完成创作任务。"""
 
     messages = [
-        SystemMessage(content=WRITER_SYSTEM_PROMPT),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=prompt),
     ]
 
     response = await llm.ainvoke(messages)
-    return response.content
+    # 处理响应内容类型
+    raw_content = response.content
+    content = raw_content if isinstance(raw_content, str) else str(raw_content)
+
+    # 检查约束
+    violations: list[dict[str, Any]] = []
+    if check_constraints:
+        violations = _check_constraints(content)
+
+    return content, violations
 
 
 # LangGraph 节点函数
-async def writer_node(state: dict) -> dict:
+async def writer_node(state: dict[str, Any]) -> dict[str, Any]:
     """创作智能体的 LangGraph 节点。"""
     task = state.get("task", "")
     materials = state.get("materials", "")
     previous_draft = state.get("draft", "")
     feedback = state.get("review_feedback", "")
 
-    draft = await write(task, materials, previous_draft, feedback)
+    draft, violations = await write(task, materials, previous_draft, feedback)
 
-    result = {"draft": draft}
+    result: dict[str, Any] = {
+        "draft": draft,
+        "violations": violations,
+    }
+
     if state.get("revision_count"):
         result["revision_count"] = state["revision_count"] + 1
     else:
