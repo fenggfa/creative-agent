@@ -1,0 +1,94 @@
+{
+  "$schema": "https://creative-agent/schema/feature_list.json",
+  "description": "结构化完成标准 - Agent 不可修改 desc 和 steps",
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "素材收集",
+      "desc": "Agent 能根据创作任务从 LightRAG 检索相关素材",
+      "steps": [
+        "接收创作任务",
+        "调用 LightRAG 查询",
+        "返回结构化素材"
+      ],
+      "acceptance_criteria": {
+        "min_materials_length": 100,
+        "max_latency_ms": 5000
+      },
+      "passes": false
+    },
+    {
+      "id": "feat-002",
+      "name": "内容创作",
+      "desc": "Agent 能基于任务和素材生成创意内容",
+      "steps": [
+        "接收任务和素材",
+        "调用 LLM 生成内容",
+        "返回结构化草稿"
+      ],
+      "acceptance_criteria": {
+        "min_length": 100,
+        "max_length": 10000,
+        "max_latency_ms": 120000
+      },
+      "passes": false
+    },
+    {
+      "id": "feat-003",
+      "name": "内容评估",
+      "desc": "Agent 能对生成内容进行五维评估",
+      "steps": [
+        "接收内容和评估标准",
+        "执行五维打分",
+        "返回评估结果和改进建议"
+      ],
+      "acceptance_criteria": {
+        "min_total_score": 0.70,
+        "min_consistency_score": 0.60,
+        "min_completeness_score": 0.60
+      },
+      "passes": false
+    },
+    {
+      "id": "feat-004",
+      "name": "工作流编排",
+      "desc": "LangGraph 能编排完整创作流程",
+      "steps": [
+        "启动工作流",
+        "执行 researcher → writer → reviewer",
+        "支持审核不通过时的迭代修改"
+      ],
+      "acceptance_criteria": {
+        "max_revisions": 2,
+        "state_persistence": true
+      },
+      "passes": false
+    },
+    {
+      "id": "feat-005",
+      "name": "约束检查",
+      "desc": "系统能检测 AI 典型表达模式和内容违规",
+      "steps": [
+        "接收内容",
+        "检测禁止模式",
+        "返回违规列表"
+      ],
+      "acceptance_criteria": {
+        "detect_ai_patterns": true,
+        "detect_length_violations": true
+      },
+      "passes": false
+    }
+  ],
+  "quality_gates": {
+    "type_check": "uv run mypy src/",
+    "lint": "uv run ruff check src/",
+    "test": "uv run pytest tests/ -v",
+    "coverage_threshold": 0.80
+  },
+  "metadata": {
+    "version": "0.1.0",
+    "last_updated": "2026-03-28",
+    "owner": "human"
+  }
+}

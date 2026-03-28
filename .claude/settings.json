@@ -1,0 +1,124 @@
+{
+  "$schema": "https://claude.ai/schema/settings.json",
+  "description": "Creative Agent Harness Configuration",
+
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Write(src/**)",
+      "Write(tests/**)",
+      "Edit(src/**)",
+      "Edit(tests/**)",
+      "Bash(uv run pytest tests/ -v)",
+      "Bash(uv run mypy src/)",
+      "Bash(uv run ruff check src/)",
+      "Bash(uv run python -m src.*)",
+      "Bash(python -c **)",
+      "Bash(ls -la **)",
+      "Bash(cat **)",
+      "mcp__baidu-search__baidu_search",
+      "mcp__baidu-search__fetch_url"
+    ],
+    "deny": [
+      "Bash(rm -rf **)",
+      "Bash(sudo **)",
+      "Bash(curl ** | bash)",
+      "Write(.env)",
+      "Write(**/.git/**)",
+      "Bash(git push --force **)"
+    ]
+  },
+
+  "hooks": {
+    "pre_tool_use": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Harness] 验证文件修改边界...' && echo 'OK'"
+          }
+        ]
+      }
+    ],
+    "post_tool_use": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run ruff check ${file_path} 2>/dev/null || echo '[Harness] 代码风格检查完成'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(uv run pytest**)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Harness] 测试执行完成'"
+          }
+        ]
+      }
+    ],
+    "notification": [
+      {
+        "matcher": "**",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Harness] 任务完成: ${tool_name}'"
+          }
+        ]
+      }
+    ]
+  },
+
+  "feedback": {
+    "auto_test_on_edit": true,
+    "auto_lint_on_edit": true,
+    "test_command": "uv run pytest tests/ -v --tb=short",
+    "lint_command": "uv run ruff check src/",
+    "type_check_command": "uv run mypy src/",
+    "error_format": "agent_readable"
+  },
+
+  "context": {
+    "max_context_files": 20,
+    "priority_files": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "src/config.py",
+      "src/constraints/rules.py",
+      "src/feedback/evaluator.py"
+    ],
+    "exclude_patterns": [
+      ".venv/**",
+      "__pycache__/**",
+      "*.pyc",
+      ".git/**",
+      "node_modules/**"
+    ]
+  },
+
+  "constraints": {
+    "max_file_size_kb": 100,
+    "max_edit_lines": 500,
+    "forbidden_patterns": [
+      "os.system(",
+      "eval(",
+      "exec(",
+      "__import__(",
+      "subprocess.call("
+    ],
+    "required_imports": [
+      "from __future__ import annotations"
+    ]
+  },
+
+  "workflow": {
+    "default_timeout_ms": 120000,
+    "max_revisions": 3,
+    "approval_threshold": "medium"
+  }
+}
