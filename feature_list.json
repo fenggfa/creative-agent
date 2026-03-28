@@ -15,7 +15,8 @@
         "min_materials_length": 100,
         "max_latency_ms": 5000
       },
-      "passes": false
+      "passes": true,
+      "verified_date": "2026-03-28"
     },
     {
       "id": "feat-002",
@@ -31,7 +32,8 @@
         "max_length": 10000,
         "max_latency_ms": 120000
       },
-      "passes": false
+      "passes": true,
+      "verified_date": "2026-03-28"
     },
     {
       "id": "feat-003",
@@ -47,7 +49,8 @@
         "min_consistency_score": 0.60,
         "min_completeness_score": 0.60
       },
-      "passes": false
+      "passes": true,
+      "verified_date": "2026-03-28"
     },
     {
       "id": "feat-004",
@@ -62,7 +65,8 @@
         "max_revisions": 2,
         "state_persistence": true
       },
-      "passes": false
+      "passes": true,
+      "verified_date": "2026-03-28"
     },
     {
       "id": "feat-005",
@@ -77,7 +81,28 @@
         "detect_ai_patterns": true,
         "detect_length_violations": true
       },
-      "passes": false
+      "passes": true,
+      "verified_date": "2026-03-28"
+    },
+    {
+      "id": "feat-006",
+      "name": "约束注入管道",
+      "desc": "AGENTS.md 约束规则能动态注入到智能体系统提示词",
+      "steps": [
+        "解析 AGENTS.md 提取规则",
+        "生成智能体系统提示词注入",
+        "Writer 创作后执行约束检查",
+        "Reviewer 使用五维评估",
+        "支持安全更新约束规则"
+      ],
+      "acceptance_criteria": {
+        "parse_md_rules": true,
+        "inject_system_prompt": true,
+        "constraint_checker_integration": true,
+        "safe_update_mechanism": true
+      },
+      "passes": true,
+      "verified_date": "2026-03-28"
     }
   ],
   "quality_gates": {
@@ -87,7 +112,7 @@
     "coverage_threshold": 0.80
   },
   "metadata": {
-    "version": "0.1.0",
+    "version": "0.2.0",
     "last_updated": "2026-03-28",
     "owner": "human"
   }

@@ -30,3 +30,13 @@ class AgentState(TypedDict, total=False):
     violations: list[dict[str, Any]]
     # 评估结果
     evaluation_result: dict[str, Any] | None
+
+    # === 输出相关字段 (2026-03-28 新增) ===
+    # 原作名称（如"西游记"）
+    source_work: str
+    # Obsidian 保存路径
+    obsidian_path: str
+    # LightRAG 保存状态
+    lightrag_saved: bool
+    # 输出结果汇总
+    output_result: dict[str, Any]
