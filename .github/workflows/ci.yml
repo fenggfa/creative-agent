@@ -1,0 +1,144 @@
+# Harness Engineering: CI/CD Pipeline
+# 持续集成流水线 - 自动化验证传感器
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ========================================
+  # 静态分析 - 编译期拦截
+  # ========================================
+  lint:
+    name: Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run Ruff
+        run: uv run ruff check src/
+
+  # ========================================
+  # 类型检查 - 静态防御
+  # ========================================
+  typecheck:
+    name: Type Check (MyPy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run MyPy
+        run: uv run mypy src/
+
+  # ========================================
+  # 测试 - 动态验证
+  # ========================================
+  test:
+    name: Test (Pytest)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --extra test
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+
+  # ========================================
+  # 覆盖率 - 质量门禁
+  # ========================================
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --extra test --extra dev
+
+      - name: Run coverage
+        run: uv run pytest tests/ --cov=src --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+
+  # ========================================
+  # Harness 完整验证
+  # ========================================
+  harness-verify:
+    name: Harness Full Verify
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run harness verify
+        run: uv run python scripts/verify.py
+
+  # ========================================
+  # 文档检查 - 文档即代码
+  # ========================================
+  docs-lint:
+    name: Docs Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.markdown-link-check.json'
+
+      - name: Lint markdown
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: '**/*.md'

@@ -103,6 +103,58 @@
       },
       "passes": true,
       "verified_date": "2026-03-28"
+    },
+    {
+      "id": "feat-007",
+      "name": "CI/CD 自动化",
+      "desc": "GitHub Actions 自动执行 Lint、类型检查、测试和覆盖率验证",
+      "steps": [
+        "Push 或 PR 触发流水线",
+        "执行 Ruff Lint 检查",
+        "执行 MyPy 类型检查",
+        "执行 Pytest 测试",
+        "生成覆盖率报告"
+      ],
+      "acceptance_criteria": {
+        "auto_trigger": true,
+        "coverage_threshold": 0.80
+      },
+      "passes": true,
+      "verified_date": "2026-03-28"
+    },
+    {
+      "id": "feat-008",
+      "name": "执行器脚本集",
+      "desc": "scripts/ 目录提供验证、回滚、环境检查等执行器动作",
+      "steps": [
+        "verify.py 执行完整验证",
+        "rollback.py 支持代码回滚",
+        "check_env.py 环境自愈检查"
+      ],
+      "acceptance_criteria": {
+        "verify_script": true,
+        "rollback_script": true,
+        "env_check_script": true
+      },
+      "passes": true,
+      "verified_date": "2026-03-28"
+    },
+    {
+      "id": "feat-009",
+      "name": "重试机制",
+      "desc": "装饰器级别的自动重试，支持指数退避和抖动",
+      "steps": [
+        "导入 retry 装饰器",
+        "配置 RetryConfig",
+        "应用到 LLM 或 API 调用"
+      ],
+      "acceptance_criteria": {
+        "sync_support": true,
+        "async_support": true,
+        "exponential_backoff": true
+      },
+      "passes": true,
+      "verified_date": "2026-03-28"
     }
   ],
   "quality_gates": {

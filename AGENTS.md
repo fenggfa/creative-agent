@@ -10,13 +10,14 @@
 
 ```
 src/
-├── agents/      # 智能体：researcher → writer → reviewer
-├── tools/       # 工具：lightrag 客户端
-├── workflow/    # 编排：LangGraph 状态机
-├── constraints/ # 约束：内容规则检查
-├── feedback/    # 反馈：GAN 风格评估器
-├── harness/     # 验证：自动化检查
-└── output/      # 输出：保存到 Obsidian + LightRAG
+├── agents/       # 智能体：researcher → writer → reviewer
+├── tools/        # 工具：lightrag 客户端 + 图谱服务
+├── workflow/     # 编排：LangGraph 状态机
+├── constraints/  # 约束：内容规则检查
+├── feedback/     # 反馈：GAN 风格评估器
+├── harness/      # Harness 核心：验证、E2E、熵管理、文档治理
+├── persistence/  # 持久化：解决换班失忆
+└── output/       # 输出：保存到 Obsidian + LightRAG
 ```
 
 ## 核心原则
@@ -24,6 +25,26 @@ src/
 1. **异步优先**：所有 I/O 使用 async/await
 2. **类型完整**：函数必须有类型注解
 3. **配置单例**：通过 `settings` 访问配置
+
+## Harness Engineering 三大支柱
+
+| 支柱 | 模块 | 说明 |
+|------|------|------|
+| 上下文工程 | `AGENTS.md` | 渐进式披露，按需加载知识树 |
+| 约束工程 | `constraints/`, `harness/provider.py` | 解析 MD 文件并注入约束规则 |
+| 反馈工程 | `feedback/evaluator.py`, `harness/e2e.py` | 五维评估 + E2E 验证 |
+
+## Harness 高级要素
+
+| 要素 | 模块 | 用途 |
+|------|------|------|
+| 持久化状态 | `persistence/` | 解决长任务"换班失忆" |
+| E2E 验证 | `harness/e2e.py` | 打破 Agent "纸面胜利" |
+| 熵管理 | `harness/entropy.py` | AI 垃圾回收（GC） |
+| 文档治理 | `harness/docs.py` | 文档 Linter + 新鲜度监控 |
+| 重试机制 | `harness/retry.py` | 反馈回路增强 |
+| CI/CD | `.github/workflows/ci.yml` | 自动化验证传感器 |
+| 执行器脚本 | `scripts/` | 回滚、环境检查、验证 |
 
 ## 知识树
 

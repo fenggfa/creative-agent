@@ -1,0 +1,17 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^https://localhost"
+    },
+    {
+      "pattern": "^http://localhost"
+    },
+    {
+      "pattern": "^https://creative-agent"
+    }
+  ],
+  "timeout": "10s",
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "5s"
+}
