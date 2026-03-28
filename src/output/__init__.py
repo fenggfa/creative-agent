@@ -1,11 +1,20 @@
-"""二创内容输出模块 - 保存到 Obsidian 和 LightRAG。"""
+"""二创内容输出模块 - 保存到 Obsidian 和 LightRAG。
+
+架构设计：
+===========================================
+
+使用服务层的直接调用函数，不依赖工具选择。
+
+- save_creative_content() → 直接调用 graph_service
+- 100% 可靠，不依赖 LLM 选择
+"""
 
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.config import settings
-from src.tools.lightrag import creative_lightrag_client
+from src.tools.graph_service import save_creative_content as save_to_graph
 
 
 class OutputManager:
@@ -20,20 +29,10 @@ class OutputManager:
         self.output_dir = output_dir or settings.CREATIVE_OUTPUT_DIR
 
     def _get_output_path(self, source_work: str, title: str) -> Path:
-        """获取输出文件路径。
-
-        Args:
-            source_work: 原作名称（如"西游记"）
-            title: 作品标题
-
-        Returns:
-            输出文件路径
-        """
-        # 构建目录结构: 30_二创作品/西游记/章节/
+        """获取输出文件路径。"""
         work_dir = self.vault_path / self.output_dir / source_work / "章节"
         work_dir.mkdir(parents=True, exist_ok=True)
 
-        # 生成文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_title = title.replace("/", "-").replace("\\", "-")[:50]
         filename = f"{safe_title}_{timestamp}.md"
@@ -46,16 +45,7 @@ class OutputManager:
         task: str,
         evaluation: dict[str, Any] | None = None,
     ) -> str:
-        """格式化为 Obsidian Markdown。
-
-        Args:
-            content: 创作内容
-            task: 创作任务
-            evaluation: 评估结果
-
-        Returns:
-            格式化的 Markdown 内容
-        """
+        """格式化为 Obsidian Markdown。"""
         lines = [
             f"# {task}",
             "",
@@ -107,17 +97,7 @@ class OutputManager:
         source_work: str = "西游记",
         evaluation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """保存二创内容到 Obsidian。
-
-        Args:
-            content: 创作内容
-            task: 创作任务
-            source_work: 原作名称
-            evaluation: 评估结果
-
-        Returns:
-            保存结果
-        """
+        """保存二创内容到 Obsidian。"""
         result: dict[str, Any] = {
             "success": False,
             "path": None,
@@ -144,41 +124,10 @@ class OutputManager:
         task: str,
         source_work: str = "西游记",
     ) -> dict[str, Any]:
-        """保存二创内容到 LightRAG 二创图谱。
-
-        Args:
-            content: 创作内容
-            task: 创作任务
-            source_work: 原作名称
-
-        Returns:
-            保存结果
-        """
-        result: dict[str, Any] = {
-            "success": False,
-            "graph_type": "creative",
-            "error": None,
-        }
-
-        try:
-            # 构建带元数据的内容
-            enriched_content = f"""【二创作品】{task}
-
-原作: {source_work}
-创作时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-{content}"""
-
-            success = await creative_lightrag_client.insert(enriched_content)
-
-            result["success"] = success
-            if not success:
-                result["error"] = "LightRAG insert failed"
-
-        except Exception as e:
-            result["error"] = str(e)
-
-        return result
+        """保存二创内容到 LightRAG 二创图谱（直接调用服务层）。"""
+        # 使用服务层的直接调用函数
+        title = f"【{source_work}】{task}"
+        return await save_to_graph(content, title)
 
     async def save_all(
         self,
@@ -187,21 +136,15 @@ class OutputManager:
         source_work: str = "西游记",
         evaluation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """保存到所有目标（Obsidian + LightRAG）。
+        """保存到所有目标（Obsidian + LightRAG）。"""
+        import asyncio
 
-        Args:
-            content: 创作内容
-            task: 创作任务
-            source_work: 原作名称
-            evaluation: 评估结果
+        obsidian_task = self.save_to_obsidian(content, task, source_work, evaluation)
+        lightrag_task = self.save_to_lightrag(content, task, source_work)
 
-        Returns:
-            保存结果汇总
-        """
-        obsidian_result = await self.save_to_obsidian(
-            content, task, source_work, evaluation
+        obsidian_result, lightrag_result = await asyncio.gather(
+            obsidian_task, lightrag_task
         )
-        lightrag_result = await self.save_to_lightrag(content, task, source_work)
 
         return {
             "obsidian": obsidian_result,
@@ -214,7 +157,7 @@ class OutputManager:
 output_manager = OutputManager()
 
 
-async def save_creative_content(
+async def save_creative_output(
     content: str,
     task: str,
     source_work: str = "西游记",
