@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 
 from src.config import settings
 from src.harness.provider import get_constraint_provider
+from src.harness.retry import LLM_RETRY, retry
 
 # 创作智能体系统提示词
 WRITER_SYSTEM_PROMPT = """你是一个专业的创意写作者。你的任务是根据提供的素材创作精彩的内容。
@@ -61,6 +62,7 @@ def _check_constraints(content: str, context: dict[str, Any] | None = None) -> l
     ]
 
 
+@retry(config=LLM_RETRY)
 async def write(
     task: str,
     materials: str,

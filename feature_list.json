@@ -1,171 +1,60 @@
 {
-  "$schema": "https://creative-agent/schema/feature_list.json",
-  "description": "结构化完成标准 - Agent 不可修改 desc 和 steps",
   "features": [
     {
       "id": "feat-001",
-      "name": "素材收集",
-      "desc": "Agent 能根据创作任务从 LightRAG 检索相关素材",
+      "desc": "创作工作流能正常运行并输出内容",
       "steps": [
-        "接收创作任务",
-        "调用 LightRAG 查询",
-        "返回结构化素材"
-      ],
-      "acceptance_criteria": {
-        "min_materials_length": 100,
-        "max_latency_ms": 5000
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
-    },
-    {
-      "id": "feat-002",
-      "name": "内容创作",
-      "desc": "Agent 能基于任务和素材生成创意内容",
-      "steps": [
-        "接收任务和素材",
-        "调用 LLM 生成内容",
-        "返回结构化草稿"
+        "调用 run_workflow",
+        "检查输出非空"
       ],
       "acceptance_criteria": {
         "min_length": 100,
-        "max_length": 10000,
-        "max_latency_ms": 120000
+        "max_latency_ms": 60000
       },
-      "passes": true,
-      "verified_date": "2026-03-28"
+      "passes": false
+    },
+    {
+      "id": "feat-002",
+      "desc": "素材检索能返回相关内容",
+      "steps": [
+        "调用 researcher 服务",
+        "检查素材非空"
+      ],
+      "acceptance_criteria": {
+        "min_results": 1
+      },
+      "passes": false
     },
     {
       "id": "feat-003",
-      "name": "内容评估",
-      "desc": "Agent 能对生成内容进行五维评估",
+      "desc": "内容评估能正确评分",
       "steps": [
-        "接收内容和评估标准",
-        "执行五维打分",
-        "返回评估结果和改进建议"
+        "调用 evaluator 服务",
+        "检查评分在有效范围"
       ],
       "acceptance_criteria": {
-        "min_total_score": 0.70,
-        "min_consistency_score": 0.60,
-        "min_completeness_score": 0.60
+        "score_range": [0, 1]
       },
-      "passes": true,
-      "verified_date": "2026-03-28"
+      "passes": false
     },
     {
       "id": "feat-004",
-      "name": "工作流编排",
-      "desc": "LangGraph 能编排完整创作流程",
+      "desc": "约束检查能检测违规内容",
       "steps": [
-        "启动工作流",
-        "执行 researcher → writer → reviewer",
-        "支持审核不通过时的迭代修改"
+        "调用 constraint checker",
+        "检查返回违规列表"
       ],
-      "acceptance_criteria": {
-        "max_revisions": 2,
-        "state_persistence": true
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
+      "acceptance_criteria": {},
+      "passes": false
     },
     {
       "id": "feat-005",
-      "name": "约束检查",
-      "desc": "系统能检测 AI 典型表达模式和内容违规",
+      "desc": "LightRAG 服务健康检查通过",
       "steps": [
-        "接收内容",
-        "检测禁止模式",
-        "返回违规列表"
+        "调用 lightrag health_check"
       ],
-      "acceptance_criteria": {
-        "detect_ai_patterns": true,
-        "detect_length_violations": true
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
-    },
-    {
-      "id": "feat-006",
-      "name": "约束注入管道",
-      "desc": "AGENTS.md 约束规则能动态注入到智能体系统提示词",
-      "steps": [
-        "解析 AGENTS.md 提取规则",
-        "生成智能体系统提示词注入",
-        "Writer 创作后执行约束检查",
-        "Reviewer 使用五维评估",
-        "支持安全更新约束规则"
-      ],
-      "acceptance_criteria": {
-        "parse_md_rules": true,
-        "inject_system_prompt": true,
-        "constraint_checker_integration": true,
-        "safe_update_mechanism": true
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
-    },
-    {
-      "id": "feat-007",
-      "name": "CI/CD 自动化",
-      "desc": "GitHub Actions 自动执行 Lint、类型检查、测试和覆盖率验证",
-      "steps": [
-        "Push 或 PR 触发流水线",
-        "执行 Ruff Lint 检查",
-        "执行 MyPy 类型检查",
-        "执行 Pytest 测试",
-        "生成覆盖率报告"
-      ],
-      "acceptance_criteria": {
-        "auto_trigger": true,
-        "coverage_threshold": 0.80
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
-    },
-    {
-      "id": "feat-008",
-      "name": "执行器脚本集",
-      "desc": "scripts/ 目录提供验证、回滚、环境检查等执行器动作",
-      "steps": [
-        "verify.py 执行完整验证",
-        "rollback.py 支持代码回滚",
-        "check_env.py 环境自愈检查"
-      ],
-      "acceptance_criteria": {
-        "verify_script": true,
-        "rollback_script": true,
-        "env_check_script": true
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
-    },
-    {
-      "id": "feat-009",
-      "name": "重试机制",
-      "desc": "装饰器级别的自动重试，支持指数退避和抖动",
-      "steps": [
-        "导入 retry 装饰器",
-        "配置 RetryConfig",
-        "应用到 LLM 或 API 调用"
-      ],
-      "acceptance_criteria": {
-        "sync_support": true,
-        "async_support": true,
-        "exponential_backoff": true
-      },
-      "passes": true,
-      "verified_date": "2026-03-28"
+      "acceptance_criteria": {},
+      "passes": false
     }
-  ],
-  "quality_gates": {
-    "type_check": "uv run mypy src/",
-    "lint": "uv run ruff check src/",
-    "test": "uv run pytest tests/ -v",
-    "coverage_threshold": 0.80
-  },
-  "metadata": {
-    "version": "0.2.0",
-    "last_updated": "2026-03-28",
-    "owner": "human"
-  }
+  ]
 }

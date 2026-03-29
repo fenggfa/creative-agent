@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.config import settings
+from src.harness.retry import LLM_RETRY, retry
 
 
 class EvaluationDimension(str, Enum):
@@ -111,18 +112,27 @@ EVALUATOR_SYSTEM_PROMPT = """你是一个严格的内容评估专家。你的职
 - 是否有明显逻辑漏洞
 - 人物行为是否符合其动机
 
-输出格式（必须严格遵守）：
+输出格式（必须严格遵守 JSON 格式）：
+```json
+{
+  "scores": {
+    "consistency": 0.85,
+    "creativity": 0.75,
+    "quality": 0.80,
+    "completeness": 0.90,
+    "logic": 0.85
+  },
+  "total_score": 0.83,
+  "passed": true,
+  "overall_feedback": "总体评价...",
+  "improvement_suggestions": ["建议1", "建议2", "建议3"]
+}
 ```
-[维度名称] 分数: X.XX
-理由: ...
-问题: - 问题1 - 问题2
-建议: ...
 
-[总分] X.XX
-[通过/不通过]
-[总体反馈] ...
-[改进建议] 1. ... 2. ... 3. ...
-```"""
+注意：
+- 分数为 0.0-1.0 之间的小数
+- passed 为 true 或 false
+- 必须输出有效的 JSON 格式"""
 
 
 class ContentEvaluator:
@@ -155,6 +165,13 @@ class ContentEvaluator:
         Returns:
             评估结果
         """
+        prompt = self._build_evaluation_prompt(task, content, materials, context)
+        response_str = await self._call_llm(prompt)
+        return self._parse_evaluation_result(response_str)
+
+    @retry(config=LLM_RETRY)
+    async def _call_llm(self, prompt: str) -> str:
+        """调用 LLM 进行评估。"""
         llm = ChatOpenAI(
             base_url=settings.LLM_BASE_URL,
             api_key=settings.LLM_API_KEY,
@@ -163,14 +180,14 @@ class ContentEvaluator:
             timeout=60.0,
         )
 
-        prompt = self._build_evaluation_prompt(task, content, materials, context)
-
         response = await llm.ainvoke([
             SystemMessage(content=EVALUATOR_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
 
-        return self._parse_evaluation_result(response.content)
+        # 确保 content 是字符串类型
+        raw_content = response.content
+        return raw_content if isinstance(raw_content, str) else str(raw_content)
 
     def _build_evaluation_prompt(
         self,
@@ -223,7 +240,122 @@ class ContentEvaluator:
         return "\n".join(lines)
 
     def _parse_evaluation_result(self, response: str) -> EvaluationResult:
-        """解析评估结果。"""
+        """解析评估结果（JSON 格式）。"""
+        import json
+
+        # 尝试提取 JSON 内容
+        json_content = self._extract_json(response)
+
+        if json_content:
+            try:
+                data = json.loads(json_content)
+                return self._parse_json_result(data)
+            except json.JSONDecodeError:
+                pass
+
+        # JSON 解析失败，尝试正则解析（向后兼容）
+        return self._parse_text_result(response)
+
+    def _extract_json(self, response: str) -> str | None:
+        """从响应中提取 JSON 内容。"""
+        import re
+
+        # 尝试匹配 ```json ... ``` 代码块
+        json_match = re.search(
+            r"```json\s*([\s\S]*?)\s*```",
+            response,
+            re.IGNORECASE,
+        )
+        if json_match:
+            return json_match.group(1).strip()
+
+        # 尝试匹配 ``` ... ``` 代码块
+        code_match = re.search(
+            r"```\s*([\s\S]*?)\s*```",
+            response,
+        )
+        if code_match:
+            content = code_match.group(1).strip()
+            if content.startswith("{"):
+                return content
+
+        # 尝试直接匹配 JSON 对象
+        json_obj_match = re.search(
+            r"\{[\s\S]*\}",
+            response,
+        )
+        if json_obj_match:
+            return json_obj_match.group(0)
+
+        return None
+
+    def _parse_json_result(self, data: dict[str, Any]) -> EvaluationResult:
+        """解析 JSON 格式的评估结果。"""
+        scores = []
+        scores_data = data.get("scores", {})
+
+        dimension_map = {
+            "consistency": EvaluationDimension.CONSISTENCY,
+            "creativity": EvaluationDimension.CREATIVITY,
+            "quality": EvaluationDimension.QUALITY,
+            "completeness": EvaluationDimension.COMPLETENESS,
+            "logic": EvaluationDimension.LOGIC,
+        }
+
+        for key, dimension in dimension_map.items():
+            score_value = scores_data.get(key, 0.7)
+            if isinstance(score_value, (int, float)):
+                if score_value > 1:
+                    score_value = score_value / 10
+                scores.append(DimensionScore(
+                    dimension=dimension,
+                    score=float(score_value),
+                    reasoning="从 JSON 评估结果中提取",
+                ))
+
+        # 如果没有解析到分数，添加默认值
+        if not scores:
+            for dimension in EvaluationDimension:
+                scores.append(DimensionScore(
+                    dimension=dimension,
+                    score=0.7,
+                    reasoning="未找到分数，使用默认值",
+                ))
+
+        # 获取总分
+        total_score = data.get("total_score")
+        if total_score is None:
+            total_score = sum(
+                s.score * self.criteria.weights.get(s.dimension, 0.2)
+                for s in scores
+            )
+        elif isinstance(total_score, (int, float)) and total_score > 1:
+            total_score = total_score / 10
+
+        # 获取通过状态
+        passed = data.get("passed", False)
+        if not isinstance(passed, bool):
+            passed = str(passed).lower() in ("true", "yes", "通过")
+
+        # 获取反馈
+        overall_feedback = data.get("overall_feedback", "评估完成")
+        if not isinstance(overall_feedback, str):
+            overall_feedback = str(overall_feedback)
+
+        # 获取改进建议
+        suggestions = data.get("improvement_suggestions", [])
+        suggestions = [str(s) for s in suggestions if s] if isinstance(suggestions, list) else []
+
+        return EvaluationResult(
+            scores=scores,
+            total_score=round(float(total_score), 2),
+            passed=bool(passed),
+            overall_feedback=overall_feedback,
+            improvement_suggestions=suggestions,
+        )
+
+    def _parse_text_result(self, response: str) -> EvaluationResult:
+        """解析文本格式的评估结果（向后兼容）。"""
         import re
 
         scores = []
@@ -238,21 +370,27 @@ class ContentEvaluator:
         }
 
         for dimension, pattern in dimension_patterns.items():
-            # 匹配 "[维度名] 分数: X.XX" 格式
+            # 匹配多种格式：
+            # [设定一致性] 分数: 0.85
+            # 设定一致性: 0.85
+            # consistency: 0.85
             match = re.search(
-                rf"\[?{pattern}\]?.*?分数[:\s]+(\d+\.?\d*)",
+                rf"(?:\[?)?(?:{pattern})(?:\]?)?[\s:：]+(\d+\.?\d*)",
                 response,
-                re.IGNORECASE | re.DOTALL,
+                re.IGNORECASE,
             )
-            if match:
-                score = float(match.group(1))
-                if score > 1:
-                    score = score / 10  # 如果是百分制，转换为小数
-                scores.append(DimensionScore(
-                    dimension=dimension,
-                    score=score,
-                    reasoning="从评估响应中提取",
-                ))
+            if match and match.group(1):
+                try:
+                    score = float(match.group(1))
+                    if score > 1:
+                        score = score / 10
+                    scores.append(DimensionScore(
+                        dimension=dimension,
+                        score=score,
+                        reasoning="从文本评估结果中提取",
+                    ))
+                except ValueError:
+                    continue
 
         # 计算加权总分
         total_score = sum(
@@ -264,43 +402,28 @@ class ContentEvaluator:
         passed = total_score >= self.criteria.passing_threshold
 
         # 检查各维度最低分
-        for score in scores:
-            min_score = self.criteria.min_scores.get(score.dimension)
-            if min_score and score.score < min_score:
+        for dim_score in scores:
+            min_score = self.criteria.min_scores.get(dim_score.dimension)
+            if min_score and dim_score.score < min_score:
                 passed = False
                 break
 
         # 解析总体反馈
-        overall_feedback = ""
+        overall_feedback = "评估完成"
         feedback_match = re.search(
-            r"\[总体反馈\][:：\s]*(.+?)(?=\[|$)",
+            r"(?:总体反馈|overall_feedback)[\s:：]+(.+?)(?=\n|$)",
             response,
-            re.DOTALL,
+            re.IGNORECASE,
         )
         if feedback_match:
             overall_feedback = feedback_match.group(1).strip()
-
-        # 解析改进建议
-        suggestions = []
-        suggestions_match = re.search(
-            r"\[改进建议\][:：\s]*(.+?)$",
-            response,
-            re.DOTALL,
-        )
-        if suggestions_match:
-            suggestion_text = suggestions_match.group(1)
-            suggestions = [
-                s.strip().lstrip("0123456789.、")
-                for s in suggestion_text.split("\n")
-                if s.strip()
-            ]
 
         return EvaluationResult(
             scores=scores,
             total_score=round(total_score, 2),
             passed=passed,
-            overall_feedback=overall_feedback or "评估完成",
-            improvement_suggestions=suggestions,
+            overall_feedback=overall_feedback,
+            improvement_suggestions=[],
         )
 
 

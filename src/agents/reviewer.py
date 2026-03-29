@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from src.config import settings
 from src.feedback.evaluator import ContentEvaluator, EvaluationResult
 from src.harness.provider import get_constraint_provider
+from src.harness.retry import LLM_RETRY, retry
 
 # 审核智能体系统提示词
 REVIEWER_SYSTEM_PROMPT = """你是一个专业的内容审核员。你的任务是审核创作内容是否符合要求。
@@ -123,6 +124,17 @@ async def review(
         return eval_result.passed, feedback, eval_result
 
     # 使用简单的 LLM 审核
+    return await _review_with_llm(task, materials, draft, violations)
+
+
+@retry(config=LLM_RETRY)
+async def _review_with_llm(
+    task: str,
+    materials: str,
+    draft: str,
+    violations: list[dict[str, Any]] | None = None,
+) -> tuple[bool, str, None]:
+    """使用 LLM 进行简单审核。"""
     llm = ChatOpenAI(
         base_url=settings.LLM_BASE_URL,
         api_key=settings.LLM_API_KEY,
