@@ -17,6 +17,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from src.config import settings
+from src.harness.provider import get_constraint_provider
 from src.tools.graph_service import (
     GRAPH_TOOLS,
     fetch_materials_for_writing,
@@ -59,6 +60,16 @@ RESEARCHER_PROMPT = """你是素材研究员。
 """
 
 
+def _build_researcher_prompt() -> str:
+    """构建带有约束注入的研究员提示词。"""
+    provider = get_constraint_provider()
+    constraint_injection = provider.get_system_prompt_injection("researcher")
+
+    if constraint_injection:
+        return f"{RESEARCHER_PROMPT}\n\n{constraint_injection}"
+    return RESEARCHER_PROMPT
+
+
 def create_researcher_agent() -> Any:
     """创建支持工具调用的研究智能体。"""
     llm = ChatOpenAI(
@@ -71,7 +82,7 @@ def create_researcher_agent() -> Any:
     agent = create_react_agent(
         llm,
         GRAPH_TOOLS,
-        prompt=RESEARCHER_PROMPT,
+        prompt=_build_researcher_prompt(),
     )
 
     return agent

@@ -169,7 +169,9 @@ class ConstraintProvider:
         """生成智能体系统提示词注入。
 
         Args:
-            agent_type: 智能体类型 (researcher/writer/reviewer)
+            agent_type: 智能体类型
+                - 单篇模式: researcher/writer/reviewer
+                - 整书模式: director/plot_architect/prose_writer/critic
 
         Returns:
             注入到系统提示词的约束内容
@@ -192,10 +194,20 @@ class ConstraintProvider:
                 injection_parts.append(f"- {pattern}")
 
         # 根据智能体类型添加特定约束
-        if agent_type == "writer":
-            injection_parts.extend(self._get_writer_constraints(rules))
-        elif agent_type == "reviewer":
-            injection_parts.extend(self._get_reviewer_constraints(rules))
+        constraint_methods = {
+            # 单篇模式
+            "researcher": self._get_researcher_constraints,
+            "writer": self._get_writer_constraints,
+            "reviewer": self._get_reviewer_constraints,
+            # 整书模式
+            "director": self._get_director_constraints,
+            "plot_architect": self._get_plot_architect_constraints,
+            "prose_writer": self._get_prose_writer_constraints,
+            "critic": self._get_critic_constraints,
+        }
+
+        if agent_type in constraint_methods:
+            injection_parts.extend(constraint_methods[agent_type](rules))
 
         return "\n".join(injection_parts)
 
@@ -214,12 +226,100 @@ class ConstraintProvider:
 
         return constraints
 
+    def _get_researcher_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 Researcher（素材收集）智能体的特定约束。"""
+        constraints = [
+            "\n## 素材收集约束",
+            "- 必须从知识图谱检索素材",
+            "- 返回与任务相关的设定、人物、背景信息",
+            "- 不要杜撰不存在的设定",
+        ]
+
+        if rules.core_principles:
+            constraints.append("- 遵循项目核心原则进行素材筛选")
+
+        return constraints
+
     def _get_reviewer_constraints(self, rules: ParsedRules) -> list[str]:
         """获取 Reviewer 智能体的特定约束。"""
         constraints = [
             "\n## 审核约束",
             "- 使用五维评估标准",
             "- 必须给出具体改进建议",
+        ]
+
+        if rules.passing_criteria:
+            threshold = rules.passing_criteria.get("total_threshold", 0.70)
+            min_consistency = rules.passing_criteria.get("min_consistency", 0.60)
+            constraints.extend([
+                f"- 总分通过阈值: {threshold:.0%}",
+                f"- 一致性最低分: {min_consistency:.0%}",
+            ])
+
+        return constraints
+
+    def _get_director_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 Director（总监制）智能体的特定约束。"""
+        constraints = [
+            "\n## 总监制约束",
+            "- 必须解析用户意图，明确创作目标",
+            "- 协调各智能体按顺序工作",
+            "- 严格把控章节进度和质量",
+            "- 发现质量问题必须要求重写",
+        ]
+
+        if rules.passing_criteria:
+            threshold = rules.passing_criteria.get("total_threshold", 0.70)
+            constraints.append(f"- 最终输出必须达到 {threshold:.0%} 质量标准")
+
+        return constraints
+
+    def _get_plot_architect_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 PlotArchitect（故事架构师）智能体的特定约束。"""
+        constraints = [
+            "\n## 故事架构师约束",
+            "- 大纲必须结构完整、逻辑清晰",
+            "- 章节之间要有自然过渡",
+            "- 伏笔埋设与揭晓要合理规划",
+            "- 情节线索要有明确起止",
+            "- 避免俗套剧情，追求差异化",
+        ]
+
+        if rules.core_principles:
+            constraints.append("- 大纲设计需符合项目核心原则")
+
+        return constraints
+
+    def _get_prose_writer_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 ProseWriter（风格写稿师）智能体的特定约束。"""
+        constraints = [
+            "\n## 写稿师约束",
+            "- 必须忠实于原作设定和大纲",
+            "- 人物性格不能偏离设定",
+            "- 文风必须与指定风格一致",
+            "- 场景描写要生动有画面感",
+            "- 对话要符合人物性格特点",
+            "- 严禁使用 AI 典型表达模式",
+        ]
+
+        if rules.forbidden_patterns:
+            constraints.append(f"- 禁止使用 {len(rules.forbidden_patterns)} 种 AI 典型表达")
+
+        if rules.passing_criteria:
+            threshold = rules.passing_criteria.get("total_threshold", 0.70)
+            constraints.append(f"- 内容需达到 {threshold:.0%} 质量标准")
+
+        return constraints
+
+    def _get_critic_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 Critic（批评审核师）智能体的特定约束。"""
+        constraints = [
+            "\n## 审核师约束",
+            "- 使用五维评估标准进行审核",
+            "- 检查人物设定一致性",
+            "- 检查情节逻辑合理性",
+            "- 检查世界观规则是否被违反",
+            "- 必须给出具体、可操作的修改建议",
         ]
 
         if rules.passing_criteria:

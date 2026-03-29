@@ -10,15 +10,59 @@
 
 ```
 src/
-├── agents/       # 智能体：researcher → writer → reviewer
-├── tools/        # 工具：lightrag 客户端 + 图谱服务
-├── workflow/     # 编排：LangGraph 状态机
+├── agents/       # 智能体（见下方详细定义）
+├── tools/        # 工具：lightrag 客户端 + 图谱服务 + 连贯性追踪
+├── workflow/     # 编排：LangGraph 状态机（单篇/整书双模式）
 ├── constraints/  # 约束：内容规则检查
-├── feedback/     # 反馈：GAN 风格评估器
+├── feedback/     # 反馈：五维评估器
 ├── harness/      # Harness 核心：验证、E2E、熵管理、文档治理
 ├── persistence/  # 持久化：解决换班失忆
 └── output/       # 输出：保存到 Obsidian + LightRAG
 ```
+
+## 智能体定义
+
+### 单篇模式（原有）
+
+```
+START → researcher → writer → reviewer → output → END
+```
+
+| 智能体 | 文件 | 职责 |
+|--------|------|------|
+| researcher | `agents/researcher.py` | 从知识图谱检索素材 |
+| writer | `agents/writer.py` | 根据素材创作内容 |
+| reviewer | `agents/reviewer.py` | 审核内容质量 |
+
+### 整书模式（新增）
+
+```
+START → director → plot_architect → [章节循环] → output → END
+                                      ↓
+                     ┌────────────────────────────────┐
+                     │ plot_architect (细纲)          │
+                     │ → prose_writer (撰写)          │
+                     │ → critic (审核)                │
+                     │ → save_chapter (保存+状态更新)  │
+                     └────────────────────────────────┘
+```
+
+| 智能体 | 文件 | 职责 | 约束注入键 |
+|--------|------|------|------------|
+| director | `agents/director.py` | 统筹全书创作流程 | `director` |
+| plot_architect | `agents/plot_architect.py` | 生成整书大纲和章节细纲 | `plot_architect` |
+| prose_writer | `agents/prose_writer.py` | 根据大纲撰写正文 | `prose_writer` |
+| critic | `agents/critic.py` | 评估内容质量、一致性 | `critic` |
+
+### 连贯性工具模块
+
+| 工具类 | 文件 | 职责 |
+|--------|------|------|
+| CharacterStateTracker | `tools/continuity.py` | 追踪人物状态变化 |
+| PlotThreadTracker | `tools/continuity.py` | 追踪情节线索 |
+| ConflictDetector | `tools/continuity.py` | 检测设定冲突 |
+| ChapterSummarizer | `tools/continuity.py` | 生成章节摘要 |
+| ForeshadowingTracker | `tools/continuity.py` | 追踪伏笔埋设与揭晓 |
 
 ## 核心原则
 

@@ -11,8 +11,20 @@
 - 熵管理 (entropy) - AI 垃圾回收
 - 文档治理 (docs) - 活着的文档
 - 重试机制 (retry) - 反馈回路增强
+- 学习模块 (learning) - 从失败中学习
+- 反馈闭环 (feedback_loop) - 自动更新规则
+- 智能体记忆 (agent_memory) - 经验持久化
 """
 
+from src.harness.agent_memory import (
+    AgentExperience,
+    AgentMemory,
+    MemoryEnhancedAgent,
+    OutcomeType,
+    PatternMatch,
+    TaskCategory,
+    get_agent_memory,
+)
 from src.harness.docs import (
     DocGardener,
     DocHealthReport,
@@ -34,6 +46,23 @@ from src.harness.entropy import (
     EntropyScanner,
     IssueSeverity,
     run_entropy_check,
+)
+from src.harness.feedback_loop import (
+    FeedbackCoordinator,
+    FeedbackLoop,
+    RuleUpdate,
+    get_feedback_coordinator,
+    process_feedback,
+)
+from src.harness.learning import (
+    FailureAnalyzer,
+    LearningEngine,
+    LearningPattern,
+    LearningSource,
+    RuleProposer,
+    RuleType,
+    get_learning_engine,
+    learn_from_failure,
 )
 from src.harness.provider import (
     ConstraintProvider,
@@ -89,4 +118,27 @@ __all__ = [
     "DocIssueType",
     "DocHealthReport",
     "run_doc_lint",
+    # Learning - 学习模块
+    "LearningEngine",
+    "LearningPattern",
+    "LearningSource",
+    "RuleType",
+    "FailureAnalyzer",
+    "RuleProposer",
+    "get_learning_engine",
+    "learn_from_failure",
+    # FeedbackLoop - 反馈闭环
+    "FeedbackLoop",
+    "FeedbackCoordinator",
+    "RuleUpdate",
+    "get_feedback_coordinator",
+    "process_feedback",
+    # AgentMemory - 智能体记忆
+    "AgentMemory",
+    "AgentExperience",
+    "MemoryEnhancedAgent",
+    "OutcomeType",
+    "TaskCategory",
+    "PatternMatch",
+    "get_agent_memory",
 ]
