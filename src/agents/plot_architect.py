@@ -4,6 +4,11 @@
 - 设计整书大纲和章节结构
 - 规划情节线索和伏笔
 - 设计情感曲线和节奏
+
+Harness 集成：
+- 约束注入：通过 get_constraint_provider()
+- 重试机制：@retry 装饰器
+- 学习闭环：从失败中学习，获取历史教训
 """
 
 from typing import Any
@@ -12,6 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.config import settings
+from src.harness import OutcomeType, TaskCategory, get_agent_memory, learn_from_failure
 from src.harness.provider import get_constraint_provider
 from src.harness.retry import LLM_RETRY, retry
 
@@ -65,6 +71,46 @@ def _build_system_prompt() -> str:
     if constraint_injection:
         return f"{PLOT_ARCHITECT_SYSTEM_PROMPT}\n\n{constraint_injection}"
     return PLOT_ARCHITECT_SYSTEM_PROMPT
+
+
+def _get_lessons_for_architect() -> list[str]:
+    """获取故事架构师的历史教训。"""
+    try:
+        memory = get_agent_memory()
+        return memory.get_lessons_learned("plot_architect", OutcomeType.FAILURE)
+    except Exception:
+        return []
+
+
+async def _record_architect_outcome(
+    task: str,
+    success: bool,
+    outline: dict[str, Any] | None = None,
+    error: str = "",
+) -> None:
+    """记录架构师结果，用于学习闭环。"""
+    import logging
+
+    try:
+        memory = get_agent_memory()
+        if success and outline:
+            memory.record_experience(
+                agent_type="plot_architect",
+                task_category=TaskCategory.PLANNING,
+                task_description=task,
+                outcome=OutcomeType.SUCCESS,
+                result_summary=f"生成大纲: {outline.get('title', '')}",
+                score=1.0,
+                reusable_patterns=[f"成功设计: {outline.get('title', '')}"],
+            )
+        else:
+            await learn_from_failure(
+                [{"error": error, "task": task}],
+                "plot_architect",
+                {"outline": outline},
+            )
+    except Exception as e:
+        logging.debug(f"记录架构师结果失败: {e}")
 
 
 @retry(config=LLM_RETRY)
@@ -315,10 +361,18 @@ async def plot_architect_node(state: dict[str, Any]) -> dict[str, Any]:
     故事架构师的 LangGraph 节点。
 
     根据当前阶段生成或优化大纲。
+
+    Harness 集成：
+    - 重试机制：@retry 装饰器
+    - 学习闭环：记录成功/失败经验
+    - 历史教训：获取并应用历史经验
     """
     task = state.get("task", "")
     book_mode = state.get("book_mode", False)
     current_chapter = state.get("current_chapter", 0)
+
+    # 获取历史教训
+    lessons = _get_lessons_for_architect()
 
     if not book_mode:
         return {}
@@ -326,30 +380,55 @@ async def plot_architect_node(state: dict[str, Any]) -> dict[str, Any]:
     # 获取创作计划
     plan = state.get("_creation_plan", {})
 
-    # 如果没有大纲，生成整书大纲
-    if not state.get("book_outline"):
-        outline = await generate_book_outline(
-            task=task,
-            plan=plan,
-            world_setting=state.get("world_setting"),
-            character_profiles=state.get("character_profiles"),
-        )
-        return {"book_outline": outline}
+    try:
+        # 如果没有大纲，生成整书大纲
+        if not state.get("book_outline"):
+            outline = await generate_book_outline(
+                task=task,
+                plan=plan,
+                world_setting=state.get("world_setting"),
+                character_profiles=state.get("character_profiles"),
+            )
 
-    # 如果有当前章节，生成章节细纲
-    if current_chapter > 0:
-        book_outline = state.get("book_outline", {})
-        chapter_summaries = state.get("chapter_summaries", {})
-        previous_chapters = [
-            s for s in chapter_summaries.values()
-            if s.get("chapter_num", 0) < current_chapter
-        ]
+            # 记录成功
+            await _record_architect_outcome(task, success=True, outline=outline)
 
-        chapter_outline = await refine_chapter_outline(
-            chapter_num=current_chapter,
-            book_outline=book_outline,
-            previous_chapters=previous_chapters,
-        )
-        return {"_current_chapter_outline": chapter_outline}
+            return {"book_outline": outline}
 
-    return {}
+        # 如果有当前章节，生成章节细纲
+        if current_chapter > 0:
+            book_outline = state.get("book_outline", {})
+            chapter_summaries = state.get("chapter_summaries", {})
+            previous_chapters = [
+                s for s in chapter_summaries.values()
+                if s.get("chapter_num", 0) < current_chapter
+            ]
+
+            chapter_outline = await refine_chapter_outline(
+                chapter_num=current_chapter,
+                book_outline=book_outline,
+                previous_chapters=previous_chapters,
+            )
+
+            # 记录成功
+            await _record_architect_outcome(
+                f"{task} - 章节{current_chapter}",
+                success=True,
+                outline=chapter_outline,
+            )
+
+            return {"_current_chapter_outline": chapter_outline}
+
+        return {}
+
+    except Exception as e:
+        # 记录失败
+        await _record_architect_outcome(task, success=False, error=str(e))
+
+        # 如果有历史教训，提供提示
+        if lessons:
+            return {
+                "error": str(e),
+                "lessons": lessons[:3],
+            }
+        raise

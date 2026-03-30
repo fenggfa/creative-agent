@@ -1,4 +1,4 @@
-"""素材收集智能体 - 从 LightRAG 知识图谱检索相关素材。
+"""素材收集智能体 - 从知识图谱检索相关素材。
 
 架构设计：
 ===========================================
@@ -8,6 +8,11 @@
 
 第二层：工具调用（可选）
   - research_with_tools() - LLM 选择工具，适合动态场景
+
+Harness 集成：
+- 约束注入：通过 get_constraint_provider()
+- 重试机制：@retry 装饰器
+- 学习闭环：从失败中学习，获取历史教训
 """
 
 from typing import Any
@@ -17,7 +22,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from src.config import settings
+from src.harness import OutcomeType, TaskCategory, get_agent_memory, learn_from_failure
 from src.harness.provider import get_constraint_provider
+from src.harness.retry import LLM_RETRY, retry
 from src.tools.graph_service import (
     GRAPH_TOOLS,
     fetch_materials_for_writing,
@@ -28,6 +35,7 @@ from src.tools.graph_service import (
 # ============================================================================
 
 
+@retry(config=LLM_RETRY)
 async def research(task: str) -> str:
     """
     获取创作素材（固定流程）。
@@ -88,6 +96,7 @@ def create_researcher_agent() -> Any:
     return agent
 
 
+@retry(config=LLM_RETRY)
 async def research_with_tools(task: str) -> str:
     """
     使用工具调用进行研究（动态场景）。
@@ -123,21 +132,85 @@ async def research_with_tools(task: str) -> str:
 # ============================================================================
 
 
+def _get_lessons_for_researcher() -> list[str]:
+    """获取研究员的历史教训。"""
+    try:
+        memory = get_agent_memory()
+        return memory.get_lessons_learned("researcher", OutcomeType.FAILURE)
+    except Exception:
+        return []
+
+
+async def _record_research_outcome(
+    task: str,
+    materials: str,
+    success: bool,
+    error: str = "",
+) -> None:
+    """记录研究结果，用于学习闭环。"""
+    import logging
+
+    try:
+        memory = get_agent_memory()
+        if success:
+            memory.record_experience(
+                agent_type="researcher",
+                task_category=TaskCategory.ANALYSIS,
+                task_description=task,
+                outcome=OutcomeType.SUCCESS,
+                result_summary=f"获取素材 {len(materials)} 字符",
+                score=1.0 if len(materials) > 100 else 0.5,
+            )
+        else:
+            await learn_from_failure(
+                [{"error": error, "task": task}],
+                "researcher",
+                {"materials_length": len(materials)},
+            )
+    except Exception as e:
+        logging.debug(f"记录研究结果失败: {e}")
+
+
 async def researcher_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     素材收集智能体的 LangGraph 节点。
 
     默认使用固定流程（100%可靠），
     可通过 use_tools=True 启用工具调用模式。
+
+    Harness 集成：
+    - 重试机制：@retry 装饰器
+    - 学习闭环：记录成功/失败经验
+    - 历史教训：获取并应用历史经验
     """
     task = state.get("task", "")
     use_tools = state.get("use_tools", False)
 
-    if use_tools:
-        # 动态场景：让 LLM 选择工具
-        materials = await research_with_tools(task)
-    else:
-        # 固定流程：直接调用（推荐）
-        materials = await research(task)
+    # 获取历史教训
+    lessons = _get_lessons_for_researcher()
 
-    return {"materials": materials}
+    try:
+        if use_tools:
+            # 动态场景：让 LLM 选择工具
+            materials = await research_with_tools(task)
+        else:
+            # 固定流程：直接调用（推荐）
+            materials = await research(task)
+
+        # 记录成功
+        await _record_research_outcome(task, materials, success=True)
+
+        return {"materials": materials}
+
+    except Exception as e:
+        # 记录失败
+        await _record_research_outcome(task, "", success=False, error=str(e))
+
+        # 如果有历史教训，尝试返回提示
+        if lessons:
+            lesson_text = "\n".join(f"- {lesson}" for lesson in lessons[:3])
+            return {
+                "materials": f"素材获取失败。历史经验提示：\n{lesson_text}",
+                "research_error": str(e),
+            }
+        raise

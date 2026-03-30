@@ -50,23 +50,16 @@ class TestWorkflow:
 
 
 @pytest.mark.asyncio
-class TestLightRAGClient:
-    """测试 LightRAG 客户端。"""
+class TestNeo4jClient:
+    """测试 Neo4j 客户端。"""
 
     async def test_client_initialization(self):
         """测试客户端能否正确初始化。"""
-        from src.tools.lightrag import LightRAGClient
+        from src.tools.kg_storage.neo4j_client import Neo4jClient
 
-        client = LightRAGClient(base_url="http://localhost:9621")
-        assert client.base_url == "http://localhost:9621"
-
-    async def test_health_check_offline(self):
-        """测试服务离线时的健康检查。"""
-        from src.tools.lightrag import LightRAGClient
-
-        client = LightRAGClient(base_url="http://localhost:9999")
-        result = await client.health_check()
-        assert result is False
+        client = Neo4jClient(uri="bolt://localhost:7687", user="neo4j", password="test")  # noqa: S106
+        assert client.uri == "bolt://localhost:7687"
+        assert client.user == "neo4j"
 
 
 if __name__ == "__main__":

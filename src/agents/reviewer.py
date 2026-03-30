@@ -1,4 +1,10 @@
-"""审核智能体 - 审核内容质量和一致性。"""
+"""审核智能体 - 审核内容质量和一致性。
+
+Harness 集成：
+- 约束注入：通过 get_constraint_provider()
+- 重试机制：@retry 装饰器
+- 学习闭环：从失败中学习，获取历史教训
+"""
 
 from typing import Any
 
@@ -7,6 +13,7 @@ from langchain_openai import ChatOpenAI
 
 from src.config import settings
 from src.feedback.evaluator import ContentEvaluator, EvaluationResult
+from src.harness import OutcomeType, TaskCategory, get_agent_memory, learn_from_failure
 from src.harness.provider import get_constraint_provider
 from src.harness.retry import LLM_RETRY, retry
 
@@ -71,6 +78,45 @@ def _evaluation_result_to_dict(result: EvaluationResult) -> dict[str, Any]:
             for s in result.scores
         ],
     }
+
+
+def _get_lessons_for_reviewer() -> list[str]:
+    """获取审核智能体的历史教训。"""
+    try:
+        memory = get_agent_memory()
+        return memory.get_lessons_learned("reviewer", OutcomeType.FAILURE)
+    except Exception:
+        return []
+
+
+async def _record_reviewer_outcome(
+    task: str,
+    is_approved: bool,
+    violations: list[dict[str, Any]],
+    eval_result: EvaluationResult | None,
+) -> None:
+    """记录审核结果，用于学习闭环。"""
+    import logging
+
+    try:
+        memory = get_agent_memory()
+        if is_approved:
+            memory.record_experience(
+                agent_type="reviewer",
+                task_category=TaskCategory.ANALYSIS,
+                task_description=task,
+                outcome=OutcomeType.SUCCESS,
+                result_summary="审核通过",
+                score=eval_result.total_score if eval_result else 1.0,
+            )
+        else:
+            await learn_from_failure(
+                violations if violations else [{"type": "review_failed"}],
+                "reviewer",
+                {"task": task, "score": eval_result.total_score if eval_result else 0},
+            )
+    except Exception as e:
+        logging.debug(f"记录审核结果失败: {e}")
 
 
 async def review(
@@ -181,7 +227,12 @@ async def _review_with_llm(
 
 # LangGraph 节点函数
 async def reviewer_node(state: dict[str, Any]) -> dict[str, Any]:
-    """审核智能体的 LangGraph 节点。"""
+    """审核智能体的 LangGraph 节点。
+
+    Harness 集成：
+    - 重试机制：@retry 装饰器
+    - 学习闭环：记录成功/失败经验
+    """
     task = state.get("task", "")
     materials = state.get("materials", "")
     draft = state.get("draft", "")
@@ -204,5 +255,8 @@ async def reviewer_node(state: dict[str, Any]) -> dict[str, Any]:
     # 保存评估结果
     if eval_result:
         result["evaluation_result"] = _evaluation_result_to_dict(eval_result)
+
+    # 记录结果用于学习
+    await _record_reviewer_outcome(task, is_approved, violations, eval_result)
 
     return result

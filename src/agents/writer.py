@@ -1,4 +1,10 @@
-"""创作智能体 - 基于收集的素材创作内容。"""
+"""创作智能体 - 基于收集的素材创作内容。
+
+Harness 集成：
+- 约束注入：通过 get_constraint_provider()
+- 重试机制：@retry 装饰器
+- 学习闭环：从失败中学习，获取历史教训
+"""
 
 from typing import Any
 
@@ -6,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.config import settings
+from src.harness import OutcomeType, TaskCategory, get_agent_memory, learn_from_failure
 from src.harness.provider import get_constraint_provider
 from src.harness.retry import LLM_RETRY, retry
 
@@ -60,6 +67,46 @@ def _check_constraints(content: str, context: dict[str, Any] | None = None) -> l
         }
         for v in violations
     ]
+
+
+def _get_lessons_for_writer() -> list[str]:
+    """获取创作智能体的历史教训。"""
+    try:
+        memory = get_agent_memory()
+        return memory.get_lessons_learned("writer", OutcomeType.FAILURE)
+    except Exception:
+        return []
+
+
+async def _record_writer_outcome(
+    task: str,
+    content: str,
+    violations: list[dict[str, Any]],
+    success: bool,
+) -> None:
+    """记录创作结果，用于学习闭环。"""
+    import logging
+
+    try:
+        memory = get_agent_memory()
+        if success:
+            memory.record_experience(
+                agent_type="writer",
+                task_category=TaskCategory.CREATION,
+                task_description=task,
+                outcome=OutcomeType.SUCCESS,
+                result_summary=f"创作内容 {len(content)} 字符",
+                score=1.0 if not violations else 0.7,
+                reusable_patterns=[f"成功完成任务: {task[:50]}"],
+            )
+        else:
+            await learn_from_failure(
+                violations,
+                "writer",
+                {"task": task, "content_length": len(content)},
+            )
+    except Exception as e:
+        logging.debug(f"记录创作结果失败: {e}")
 
 
 @retry(config=LLM_RETRY)
@@ -136,13 +183,29 @@ async def write(
 
 # LangGraph 节点函数
 async def writer_node(state: dict[str, Any]) -> dict[str, Any]:
-    """创作智能体的 LangGraph 节点。"""
+    """创作智能体的 LangGraph 节点。
+
+    Harness 集成：
+    - 重试机制：@retry 装饰器
+    - 学习闭环：记录成功/失败经验
+    - 历史教训：获取并应用历史经验
+    """
     task = state.get("task", "")
     materials = state.get("materials", "")
     previous_draft = state.get("draft", "")
     feedback = state.get("review_feedback", "")
 
-    draft, violations = await write(task, materials, previous_draft, feedback)
+    # 获取历史教训
+    lessons = _get_lessons_for_writer()
+
+    # 在反馈中加入历史教训
+    enhanced_feedback = feedback
+    if lessons and previous_draft:  # 修改时提醒
+        enhanced_feedback = f"{feedback}\n\n历史经验提醒：\n" + "\n".join(
+            f"- {lesson}" for lesson in lessons[:3]
+        )
+
+    draft, violations = await write(task, materials, previous_draft, enhanced_feedback)
 
     result: dict[str, Any] = {
         "draft": draft,
@@ -153,5 +216,9 @@ async def writer_node(state: dict[str, Any]) -> dict[str, Any]:
         result["revision_count"] = state["revision_count"] + 1
     else:
         result["revision_count"] = 1
+
+    # 记录结果用于学习
+    success = len(violations) == 0
+    await _record_writer_outcome(task, draft, violations, success)
 
     return result

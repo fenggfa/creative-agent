@@ -204,6 +204,8 @@ class ConstraintProvider:
             "plot_architect": self._get_plot_architect_constraints,
             "prose_writer": self._get_prose_writer_constraints,
             "critic": self._get_critic_constraints,
+            # 知识图谱
+            "kg_builder": self._get_kg_builder_constraints,
         }
 
         if agent_type in constraint_methods:
@@ -329,6 +331,22 @@ class ConstraintProvider:
                 f"- 总分通过阈值: {threshold:.0%}",
                 f"- 一致性最低分: {min_consistency:.0%}",
             ])
+
+        return constraints
+
+    def _get_kg_builder_constraints(self, rules: ParsedRules) -> list[str]:
+        """获取 KG Builder（知识图谱构建师）智能体的特定约束。"""
+        constraints = [
+            "\n## 知识图谱构建约束",
+            "- 实体名称必须统一，避免同义多形",
+            "- 关系必须有明确的语义类型",
+            "- 优先提取核心实体，避免过度提取",
+            "- 置信度评估要基于文本明确程度",
+            "- 只提取文本中明确描述的关系",
+        ]
+
+        if rules.core_principles:
+            constraints.append("- 图谱构建需符合项目核心原则")
 
         return constraints
 

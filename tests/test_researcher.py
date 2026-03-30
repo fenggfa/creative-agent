@@ -15,19 +15,41 @@ class TestFetchMaterials:
     async def test_fetch_with_valid_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """测试有效的任务查询。"""
 
-        class MockClient:
-            async def query(self, query: str) -> str:
+        class MockKGService:
+            async def query(self, query: str, book: str | None = None, source: str | None = None) -> str:
                 return f"查询结果: {query}"
+
+            async def connect(self) -> None:
+                pass
 
         from src.tools import graph_service
 
-        monkeypatch.setattr(graph_service, "lightrag_client", MockClient())
-        monkeypatch.setattr(graph_service, "creative_lightrag_client", MockClient())
+        mock_service = MockKGService()
+        monkeypatch.setattr(graph_service, "_local_kg_service", mock_service)
 
         result = await fetch_materials_for_writing("孙悟空的性格")
 
-        assert "素材图谱" in result
-        assert "二创图谱" in result
+        assert "查询结果" in result
+
+    @pytest.mark.asyncio
+    async def test_fetch_with_book_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """测试按书名过滤查询。"""
+
+        class MockKGService:
+            async def query(self, query: str, book: str | None = None, source: str | None = None) -> str:
+                return f"查询结果: {query} (book={book})"
+
+            async def connect(self) -> None:
+                pass
+
+        from src.tools import graph_service
+
+        mock_service = MockKGService()
+        monkeypatch.setattr(graph_service, "_local_kg_service", mock_service)
+
+        result = await fetch_materials_for_writing("孙悟空", book="西游记")
+
+        assert "西游记" in result
 
     @pytest.mark.asyncio
     async def test_fetch_with_short_task(self) -> None:
@@ -46,34 +68,12 @@ class TestSaveCreativeContent:
     """测试内容保存功能。"""
 
     @pytest.mark.asyncio
-    async def test_save_valid_content(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """测试保存有效内容。"""
-
-        async def mock_insert(content: str) -> bool:
-            return True
-
-        from src.tools import graph_service
-
-        monkeypatch.setattr(
-            graph_service.creative_lightrag_client,
-            "insert",
-            mock_insert,
-        )
-
-        result = await save_creative_content(
-            content="这是一段测试创作内容，足够长的文本内容。",
-            title="测试标题",
-        )
-
-        assert result["success"] is True
-        assert result["title"] == "测试标题"
-
-    @pytest.mark.asyncio
     async def test_save_short_content(self) -> None:
         """测试内容太短。"""
         result = await save_creative_content(
             content="短",
             title="标题",
+            book="西游记",
         )
 
         assert result["success"] is False
@@ -85,10 +85,23 @@ class TestSaveCreativeContent:
         result = await save_creative_content(
             content="这是一段足够长的测试内容文本内容，超过二十个字符。",
             title="",
+            book="西游记",
         )
 
         assert result["success"] is False
         assert "空" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_save_empty_book(self) -> None:
+        """测试空书名。"""
+        result = await save_creative_content(
+            content="这是一段足够长的测试内容文本内容，超过二十个字符。",
+            title="测试标题",
+            book="",
+        )
+
+        assert result["success"] is False
+        assert "书名" in result["error"]
 
 
 class TestResearcherNode:
@@ -98,20 +111,23 @@ class TestResearcherNode:
     async def test_researcher_node_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """测试默认模式（直接调用，不使用工具）。"""
 
-        class MockClient:
-            async def query(self, query: str) -> str:
+        class MockKGService:
+            async def query(self, query: str, book: str | None = None, source: str | None = None) -> str:
                 return f"素材: {query}"
+
+            async def connect(self) -> None:
+                pass
 
         from src.agents import researcher
         from src.tools import graph_service
 
-        monkeypatch.setattr(graph_service, "lightrag_client", MockClient())
-        monkeypatch.setattr(graph_service, "creative_lightrag_client", MockClient())
+        mock_service = MockKGService()
+        monkeypatch.setattr(graph_service, "_local_kg_service", mock_service)
 
         result = await researcher.researcher_node({"task": "孙悟空的性格"})
 
         assert "materials" in result
-        assert "素材图谱" in result["materials"]
+        assert "素材" in result["materials"]
 
     @pytest.mark.asyncio
     async def test_researcher_node_with_tools(
@@ -119,17 +135,19 @@ class TestResearcherNode:
     ) -> None:
         """测试工具调用模式。"""
 
-        class MockClient:
-            async def query(self, query: str) -> str:
+        class MockKGService:
+            async def query(self, query: str, book: str | None = None, source: str | None = None) -> str:
                 return f"查询结果: {query}"
+
+            async def connect(self) -> None:
+                pass
 
         from src.agents import researcher
         from src.tools import graph_service
 
-        monkeypatch.setattr(graph_service, "lightrag_client", MockClient())
-        monkeypatch.setattr(graph_service, "creative_lightrag_client", MockClient())
+        mock_service = MockKGService()
+        monkeypatch.setattr(graph_service, "_local_kg_service", mock_service)
 
-        # 工具调用模式会回退到直接调用（因为没有真实 LLM）
         result = await researcher.researcher_node({
             "task": "孙悟空的性格",
             "use_tools": True,

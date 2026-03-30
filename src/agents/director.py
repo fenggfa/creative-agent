@@ -5,6 +5,11 @@
 - 协调各专业智能体的工作流程
 - 把控全书进度和整体品质
 - 决定何时进入下一章节、何时需要重写
+
+Harness 集成：
+- 约束注入：通过 get_constraint_provider()
+- 重试机制：@retry 装饰器
+- 学习闭环：从失败中学习，获取历史教训
 """
 
 from typing import Any
@@ -13,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.config import settings
+from src.harness import OutcomeType, TaskCategory, get_agent_memory, learn_from_failure
 from src.harness.provider import get_constraint_provider
 from src.harness.retry import LLM_RETRY, retry
 
@@ -59,6 +65,46 @@ def _build_system_prompt() -> str:
     if constraint_injection:
         return f"{DIRECTOR_SYSTEM_PROMPT}\n\n{constraint_injection}"
     return DIRECTOR_SYSTEM_PROMPT
+
+
+def _get_lessons_for_director() -> list[str]:
+    """获取总监制的历史教训。"""
+    try:
+        memory = get_agent_memory()
+        return memory.get_lessons_learned("director", OutcomeType.FAILURE)
+    except Exception:
+        return []
+
+
+async def _record_director_outcome(
+    task: str,
+    success: bool,
+    error: str = "",
+    plan: dict[str, Any] | None = None,
+) -> None:
+    """记录总监制结果，用于学习闭环。"""
+    import logging
+
+    try:
+        memory = get_agent_memory()
+        if success:
+            memory.record_experience(
+                agent_type="director",
+                task_category=TaskCategory.PLANNING,
+                task_description=task,
+                outcome=OutcomeType.SUCCESS,
+                result_summary=f"制定创作计划: {plan.get('intent', '') if plan else ''}",
+                score=1.0,
+                reusable_patterns=[f"成功规划: {task[:50]}"],
+            )
+        else:
+            await learn_from_failure(
+                [{"error": error, "task": task}],
+                "director",
+                {"plan": plan},
+            )
+    except Exception as e:
+        logging.debug(f"记录总监制结果失败: {e}")
 
 
 @retry(config=LLM_RETRY)
@@ -358,27 +404,51 @@ async def director_node(state: dict[str, Any]) -> dict[str, Any]:
     总监制智能体的 LangGraph 节点。
 
     根据当前状态决定下一步操作。
+
+    Harness 集成：
+    - 重试机制：@retry 装饰器
+    - 学习闭环：记录成功/失败经验
+    - 历史教训：获取并应用历史经验
     """
     task = state.get("task", "")
     book_mode = state.get("book_mode", False)
+
+    # 获取历史教训
+    lessons = _get_lessons_for_director()
 
     if not book_mode:
         # 单篇模式，直接返回（由原有流程处理）
         return {"materials": state.get("materials", "")}
 
-    # 整书模式：分析任务
-    plan = await analyze_task(task)
+    try:
+        # 整书模式：分析任务
+        plan = await analyze_task(task)
 
-    return {
-        "book_mode": True,
-        "task": task,
-        "current_chapter": 0,
-        "chapter_contents": {},
-        "chapter_summaries": {},
-        "character_states": {},
-        "plot_threads": {},
-        "foreshadowing": [],
-        "review_history": [],
-        # 存储创作计划供后续使用
-        "_creation_plan": plan,
-    }
+        # 记录成功
+        await _record_director_outcome(task, success=True, plan=plan)
+
+        return {
+            "book_mode": True,
+            "task": task,
+            "current_chapter": 0,
+            "chapter_contents": {},
+            "chapter_summaries": {},
+            "character_states": {},
+            "plot_threads": {},
+            "foreshadowing": [],
+            "review_history": [],
+            # 存储创作计划供后续使用
+            "_creation_plan": plan,
+        }
+
+    except Exception as e:
+        # 记录失败
+        await _record_director_outcome(task, success=False, error=str(e))
+
+        # 如果有历史教训，提供提示
+        if lessons:
+            return {
+                "error": str(e),
+                "lessons": lessons[:3],
+            }
+        raise
