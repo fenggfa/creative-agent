@@ -91,8 +91,8 @@ class AgentState(TypedDict, total=False):
     source_work: str
     # Obsidian 保存路径
     obsidian_path: str
-    # LightRAG 保存状态
-    lightrag_saved: bool
+    # 知识图谱保存状态
+    kg_saved: bool
     # 输出结果汇总
     output_result: dict[str, Any]
 
@@ -128,7 +128,7 @@ class BookState(TypedDict, total=False):
     # === 输出 ===
     final_output: str
     obsidian_path: str
-    lightrag_saved: bool
+    kg_saved: bool
     output_result: dict[str, Any]
 
     # === 兼容 AgentState 字段 ===

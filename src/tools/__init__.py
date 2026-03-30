@@ -1,4 +1,9 @@
-"""外部服务集成工具包。"""
+"""知识图谱工具包。
+
+存储架构：
+- Neo4j：图数据库，存储实体和关系
+- SQLite FTS5：实体索引，快速全文检索
+"""
 
 from src.tools.continuity import (
     ChapterSummarizer,
@@ -12,11 +17,15 @@ from src.tools.graph_service import (
     fetch_materials_for_writing,
     save_creative_content,
 )
-from src.tools.lightrag import (
-    GraphType,
-    LightRAGClient,
-    creative_lightrag_client,
-    lightrag_client,
+from src.tools.kg_extractor import (
+    extract_entities,
+    extract_relations,
+    parse_document,
+)
+from src.tools.kg_storage import (
+    EntityIndex,
+    LocalKGService,
+    Neo4jClient,
 )
 
 __all__ = [
@@ -24,15 +33,18 @@ __all__ = [
     "ask_knowledge_graph",
     "fetch_materials_for_writing",
     "save_creative_content",
-    # LightRAG Client
-    "GraphType",
-    "LightRAGClient",
-    "creative_lightrag_client",
-    "lightrag_client",
     # Continuity Tools
     "CharacterStateTracker",
     "ChapterSummarizer",
     "ConflictDetector",
     "ForeshadowingTracker",
     "PlotThreadTracker",
+    # Knowledge Graph Storage
+    "Neo4jClient",
+    "EntityIndex",
+    "LocalKGService",
+    # Knowledge Graph Extraction
+    "parse_document",
+    "extract_entities",
+    "extract_relations",
 ]

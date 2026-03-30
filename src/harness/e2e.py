@@ -147,14 +147,18 @@ class E2EValidator:
         """验证 API 调用。"""
         # 导入实际的服务进行验证
         try:
-            from src.tools.lightrag import lightrag_client
+            from src.tools.kg_storage.neo4j_client import Neo4jClient
 
-            # 检查服务是否可用
-            is_healthy = await lightrag_client.health_check()
+            # 检查 Neo4j 服务是否可用
+            client = Neo4jClient()
+            await client.connect()
+            is_healthy = await client.health_check()
+            await client.close()
+
             if not is_healthy:
-                return {"success": False, "error": "LightRAG service not available"}
+                return {"success": False, "error": "Neo4j service not available"}
 
-            return {"success": True, "service": "lightrag"}
+            return {"success": True, "service": "neo4j"}
 
         except Exception as e:
             return {"success": False, "error": str(e)}

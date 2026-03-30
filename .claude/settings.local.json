@@ -10,7 +10,26 @@
       "Bash(./init.sh --full 2>&1)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(uv run:*)",
+      "Bash(git check-ignore:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(curl -s https://raw.githubusercontent.com/HKUDS/LightRAG/main/lightrag/api/routes.py)",
+      "Bash(curl -s http://localhost:9621/health)",
+      "Bash(curl -s http://localhost:9621/openapi.json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''=== LightRAG API Endpoints ===''''\\); [print\\(f''''{v.upper\\(\\):6} {p}''''\\) for p,v in sorted\\(d.get\\(''''paths'''',{}\\).items\\(\\)\\) for m in d[''''paths''''][p]]\")",
+      "Bash(curl -s http://localhost:9621/docs)",
+      "Bash(python3 -c \"import httpx; help\\(httpx.AsyncClient.delete\\)\")",
+      "Bash(python3 -c \"import inspect; import httpx; print\\(inspect.signature\\(httpx.AsyncClient.delete\\)\\)\")",
+      "Bash(cat:*)",
+      "Bash(find /Users/fenggf/Documents/project/creative-agent/src -name \"*.py\" -exec wc -l {} +)",
+      "Bash(git config:*)",
+      "Bash(uv sync:*)",
+      "Bash(nc -z localhost 7687)",
+      "Bash(nc -z localhost 7474)"
     ]
   }
 }

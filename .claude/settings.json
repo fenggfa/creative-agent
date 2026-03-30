@@ -1,5 +1,5 @@
 {
-  "$schema": "https://claude.ai/schema/settings.json",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "description": "Creative Agent Harness Configuration",
 
   "permissions": {
@@ -30,44 +30,45 @@
   },
 
   "hooks": {
-    "pre_tool_use": [
+    "PreToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Harness] 验证文件修改边界...' && echo 'OK'"
+            "command": "echo '[Harness] 验证文件修改边界...' && echo 'OK'",
+            "decision": "allow"
           }
         ]
       }
     ],
-    "post_tool_use": [
+    "PostToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "uv run ruff check ${file_path} 2>/dev/null || echo '[Harness] 代码风格检查完成'"
+            "command": "uv run ruff check ${CLAUDE_FILE_PATH} 2>/dev/null || echo '[Harness] 代码风格检查完成'"
           }
         ]
       },
       {
-        "matcher": "Bash(uv run pytest**)",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Harness] 测试执行完成'"
+            "command": "echo '[Harness] 命令执行完成: ${CLAUDE_TOOL_NAME}'"
           }
         ]
       }
     ],
-    "notification": [
+    "Notification": [
       {
-        "matcher": "**",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Harness] 任务完成: ${tool_name}'"
+            "command": "echo '[Harness] 任务完成: ${CLAUDE_TOOL_NAME}'"
           }
         ]
       }

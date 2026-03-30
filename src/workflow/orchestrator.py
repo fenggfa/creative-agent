@@ -45,7 +45,7 @@ from src.workflow.state import AgentState, BookState
 
 async def output_node(state: dict[str, Any]) -> dict[str, Any]:
     """
-    输出节点：保存创作内容到 Obsidian 和 LightRAG。
+    输出节点：保存创作内容到 Obsidian 和知识图谱。
     """
     task = state.get("task", "")
     draft = state.get("draft", "")
@@ -73,7 +73,7 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
     output_state: dict[str, Any] = {
         "final_output": final_output,
         "output_result": result,
-        "lightrag_saved": result.get("lightrag", {}).get("success", False),
+        "kg_saved": result.get("kg", {}).get("success", False),
     }
 
     if os.environ.get("HARNESS_E2E"):
@@ -132,7 +132,7 @@ async def _output_book(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "final_output": full_content,
         "output_result": result,
-        "lightrag_saved": result.get("lightrag", {}).get("success", False),
+        "kg_saved": result.get("kg", {}).get("success", False),
     }
 
 

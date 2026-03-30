@@ -1,4 +1,4 @@
-"""二创内容输出模块 - 保存到 Obsidian 和 LightRAG。
+"""二创内容输出模块 - 保存到 Obsidian 和知识图谱。
 
 架构设计：
 ===========================================
@@ -9,12 +9,54 @@
 - 100% 可靠，不依赖 LLM 选择
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from src.config import settings
 from src.tools.graph_service import save_creative_content as save_to_graph
+
+
+def clean_final_output(content: str) -> str:
+    """
+    清理最终输出内容，移除思考过程、参考标记等。
+
+    Args:
+        content: 原始内容
+
+    Returns:
+        清理后的正文内容
+    """
+    if not content:
+        return content
+
+    # 移除 <think>...</think> 标签及其内容（思考过程）
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.IGNORECASE)
+
+    # 移除其他常见的思考标签
+    cleaned = re.sub(r"<reasoning>[\s\S]*?</reasoning>", "", cleaned, flags=re.IGNORECASE)
+
+    # 移除 References 部分（通常是模型生成的参考资料）
+    cleaned = re.sub(
+        r"\n---\s*\n###?\s*References?\s*\n.*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # 移除写作说明部分
+    cleaned = re.sub(
+        r"\n---\s*\n\*\*写作说明\*\*.*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # 移除连续的空行（超过2个）
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    return cleaned.strip()
 
 
 class OutputManager:
@@ -106,7 +148,9 @@ class OutputManager:
 
         try:
             output_path = self._get_output_path(source_work, task)
-            formatted = self._format_content(content, task, evaluation)
+            # 清理内容，只保留正文
+            cleaned_content = clean_final_output(content)
+            formatted = self._format_content(cleaned_content, task, evaluation)
 
             output_path.write_text(formatted, encoding="utf-8")
 
@@ -118,16 +162,18 @@ class OutputManager:
 
         return result
 
-    async def save_to_lightrag(
+    async def save_to_kg(
         self,
         content: str,
         task: str,
         source_work: str = "西游记",
     ) -> dict[str, Any]:
-        """保存二创内容到 LightRAG 二创图谱（直接调用服务层）。"""
+        """保存二创内容到知识图谱。"""
+        # 清理内容，只保留正文
+        cleaned_content = clean_final_output(content)
         # 使用服务层的直接调用函数
         title = f"【{source_work}】{task}"
-        return await save_to_graph(content, title)
+        return await save_to_graph(cleaned_content, title, book=source_work)
 
     async def save_all(
         self,
@@ -136,20 +182,20 @@ class OutputManager:
         source_work: str = "西游记",
         evaluation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """保存到所有目标（Obsidian + LightRAG）。"""
+        """保存到所有目标（Obsidian + 知识图谱）。"""
         import asyncio
 
         obsidian_task = self.save_to_obsidian(content, task, source_work, evaluation)
-        lightrag_task = self.save_to_lightrag(content, task, source_work)
+        kg_task = self.save_to_kg(content, task, source_work)
 
-        obsidian_result, lightrag_result = await asyncio.gather(
-            obsidian_task, lightrag_task
+        obsidian_result, kg_result = await asyncio.gather(
+            obsidian_task, kg_task
         )
 
         return {
             "obsidian": obsidian_result,
-            "lightrag": lightrag_result,
-            "success": obsidian_result["success"] or lightrag_result["success"],
+            "kg": kg_result,
+            "success": obsidian_result["success"] or kg_result["success"],
         }
 
 
