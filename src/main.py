@@ -1,10 +1,18 @@
-"""多智能体创作工作流 CLI 入口。"""
+"""多智能体创作工作流 CLI 入口。
 
+支持两种模式：
+1. 创作模式：python -m src.main "写一段孙悟空的故事"
+2. 知识图谱构建：python -m src.main --upload book.txt --book 西游记
+"""
+
+import argparse
 import asyncio
 import re
+from pathlib import Path
+from typing import Any
 
 from src.config import settings
-from src.tools.kg_storage.neo4j_client import Neo4jClient
+from src.tools.kg_storage import EntityIndex, Neo4jClient
 from src.workflow.orchestrator import app
 from src.workflow.state import AgentState
 
@@ -47,6 +55,186 @@ async def check_services() -> bool:
     except Exception as e:
         print(f"❌ Neo4j 连接错误: {e}\n")
         return False
+
+
+async def upload_document(
+    file_path: str,
+    book: str,
+    source: str = "material",
+) -> dict[str, Any]:
+    """
+    上传文档并构建知识图谱。
+
+    Args:
+        file_path: 文档文件路径
+        book: 书名
+        source: 来源类型 (material/creative)
+
+    Returns:
+        构建结果
+    """
+    from src.agents.kg_builder import build_knowledge_graph
+
+    # 读取文件
+    path = Path(file_path)
+    if not path.exists():
+        print(f"❌ 文件不存在: {file_path}")
+        return {"success": False, "error": "文件不存在"}
+
+    print(f"\n{'='*60}")
+    print(f"上传文档: {file_path}")
+    print(f"书名: {book}")
+    print(f"来源: {source}")
+    print(f"{'='*60}\n")
+
+    # 读取内容
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = path.read_text(encoding="gbk")
+
+    print(f"文档大小: {len(content)} 字符\n")
+
+    # 连接服务
+    neo4j_client = Neo4jClient()
+    entity_index = EntityIndex()
+
+    try:
+        await neo4j_client.connect()
+        await entity_index.connect()
+    except Exception as e:
+        print(f"❌ 服务连接失败: {e}")
+        return {"success": False, "error": str(e)}
+
+    # 构建知识图谱
+    print("开始构建知识图谱...\n")
+
+    try:
+        result = await build_knowledge_graph(
+            document=content,
+            book=book,
+            source=source,
+            neo4j_client=neo4j_client,
+            entity_index=entity_index,
+        )
+
+        # 打印结果
+        print(f"\n{'─'*60}")
+        print("知识图谱构建完成")
+        print(f"{'─'*60}")
+        print(f"  文档 ID: {result.doc_id}")
+        print(f"  处理分块: {result.chunks_processed}")
+        print(f"  提取实体: {len(result.entities)} 个")
+        print(f"  抽取关系: {len(result.relations)} 条")
+        print(f"  耗时: {result.build_time_seconds:.2f}s")
+
+        if result.success:
+            print("\n✅ 构建成功")
+
+            # 显示部分实体
+            if result.entities:
+                print("\n实体示例 (前5个):")
+                for entity in result.entities[:5]:
+                    print(f"  - [{entity.entity_type}] {entity.name}")
+                    if entity.description:
+                        desc_len = len(entity.description)
+                        suffix = "..." if desc_len > 50 else ""
+                        desc = entity.description[:50] + suffix
+                        print(f"    {desc}")
+        else:
+            print(f"\n❌ 构建失败: {result.error_message}")
+
+        return result.to_dict()
+
+    except Exception as e:
+        print(f"\n❌ 构建失败: {e}")
+        return {"success": False, "error": str(e)}
+
+    finally:
+        await neo4j_client.close()
+        await entity_index.close()
+
+
+async def query_knowledge_graph(
+    query: str,
+    book: str | None = None,
+) -> str:
+    """
+    查询知识图谱。
+
+    Args:
+        query: 查询问题
+        book: 书名过滤
+
+    Returns:
+        查询结果
+    """
+    from src.tools.kg_storage import LocalKGService
+
+    print(f"\n{'='*60}")
+    print(f"查询: {query}")
+    if book:
+        print(f"书名: {book}")
+    print(f"{'='*60}\n")
+
+    service = LocalKGService()
+
+    try:
+        await service.connect()
+        answer = await service.query(query, book=book)
+
+        print(answer)
+        return answer
+
+    except Exception as e:
+        print(f"❌ 查询失败: {e}")
+        return f"查询失败: {e}"
+
+    finally:
+        await service.close()
+
+
+async def list_knowledge_graphs() -> list[str]:
+    """列出所有知识图谱（按书名）。"""
+    from src.tools.kg_storage import LocalKGService
+
+    service = LocalKGService()
+
+    try:
+        await service.connect()
+
+        # 获取统计
+        stats = await service.get_stats()
+
+        print(f"\n{'='*60}")
+        print("知识图谱统计")
+        print(f"{'='*60}\n")
+
+        print(f"总实体数: {stats['neo4j'].get('entity_count', 0)}")
+        print(f"总关系数: {stats['neo4j'].get('relation_count', 0)}")
+
+        # 按书统计
+        by_book = stats.get('index', {}).get('by_book', {})
+        if by_book:
+            print("\n按书统计:")
+            for book_name, count in by_book.items():
+                print(f"  - {book_name}: {count} 实体")
+
+        # 按类型统计
+        by_type = stats.get('index', {}).get('by_type', {})
+        if by_type:
+            print("\n按类型统计:")
+            for entity_type, count in by_type.items():
+                print(f"  - {entity_type}: {count}")
+
+        return list(by_book.keys())
+
+    except Exception as e:
+        print(f"❌ 获取统计失败: {e}")
+        return []
+
+    finally:
+        await service.close()
 
 
 async def run_workflow(task: str, use_tools: bool = False) -> str:
@@ -109,22 +297,101 @@ async def run_workflow(task: str, use_tools: bool = False) -> str:
     return output_str
 
 
-def main() -> str:
+def main() -> Any:
     """CLI 入口函数。"""
-    import argparse
+    parser = argparse.ArgumentParser(
+        description="多智能体创作工作流",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  # 创作模式
+  python -m src.main "写一段孙悟空大闹天宫的故事"
 
-    parser = argparse.ArgumentParser(description="多智能体创作工作流")
-    parser.add_argument("task", nargs="+", help="创作任务描述")
+  # 上传文档构建知识图谱
+  python -m src.main --upload docs/西游记.txt --book 西游记
+  python -m src.main --upload docs/二创.txt --book 西游记 --source creative
+
+  # 查询知识图谱
+  python -m src.main --query "孙悟空的武器是什么"
+  python -m src.main --query "孙悟空的朋友" --book 西游记
+
+  # 列出所有知识图谱
+  python -m src.main --list
+        """,
+    )
+
+    # 互斥组：创作任务 vs 上传文档 vs 查询
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "task",
+        nargs="*",
+        help="创作任务描述",
+    )
+    group.add_argument(
+        "--upload",
+        metavar="FILE",
+        help="上传文档并构建知识图谱",
+    )
+    group.add_argument(
+        "--query",
+        metavar="QUESTION",
+        help="查询知识图谱",
+    )
+    group.add_argument(
+        "--list",
+        action="store_true",
+        help="列出所有知识图谱",
+    )
+
+    # 可选参数
     parser.add_argument(
         "--tools",
         action="store_true",
-        help="使用工具调用模式（LLM 自动选择工具）",
+        help="创作模式：使用工具调用（LLM 自动选择工具）",
+    )
+    parser.add_argument(
+        "--book",
+        default="未命名",
+        help="上传模式：书名（默认：未命名）",
+    )
+    parser.add_argument(
+        "--source",
+        choices=["material", "creative"],
+        default="material",
+        help="上传模式：来源类型（默认：material）",
     )
 
     args = parser.parse_args()
-    task = " ".join(args.task)
-    result = asyncio.run(run_workflow(task, use_tools=args.tools))
-    return result
+
+    # 根据模式执行
+    if args.upload:
+        # 上传文档模式
+        asyncio.run(upload_document(
+            file_path=args.upload,
+            book=args.book,
+            source=args.source,
+        ))
+        return None
+
+    elif args.query:
+        # 查询模式
+        asyncio.run(query_knowledge_graph(
+            query=args.query,
+            book=args.book if args.book != "未命名" else None,
+        ))
+        return None
+
+    elif args.list:
+        # 列表模式
+        asyncio.run(list_knowledge_graphs())
+        return None
+
+    else:
+        # 创作模式
+        if not args.task:
+            parser.error("创作模式需要提供任务描述")
+        task = " ".join(args.task)
+        return asyncio.run(run_workflow(task, use_tools=args.tools))
 
 
 if __name__ == "__main__":
