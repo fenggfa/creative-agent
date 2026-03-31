@@ -61,6 +61,7 @@ async def upload_document(
     file_path: str,
     book: str,
     source: str = "material",
+    debug: bool = False,
 ) -> dict[str, Any]:
     """
     上传文档并构建知识图谱。
@@ -69,6 +70,7 @@ async def upload_document(
         file_path: 文档文件路径
         book: 书名
         source: 来源类型 (material/creative)
+        debug: 是否启用调试模式
 
     Returns:
         构建结果
@@ -85,6 +87,8 @@ async def upload_document(
     print(f"上传文档: {file_path}")
     print(f"书名: {book}")
     print(f"来源: {source}")
+    if debug:
+        print("调试模式: 启用")
     print(f"{'='*60}\n")
 
     # 读取内容
@@ -116,6 +120,7 @@ async def upload_document(
             source=source,
             neo4j_client=neo4j_client,
             entity_index=entity_index,
+            debug_mode=debug,
         )
 
         # 打印结果
@@ -141,6 +146,12 @@ async def upload_document(
                         suffix = "..." if desc_len > 50 else ""
                         desc = entity.description[:50] + suffix
                         print(f"    {desc}")
+
+            # 调试模式下提示报告位置
+            if debug:
+                from src.config import settings
+
+                print(f"\n📄 调试报告已保存: {settings.KG_TRACE_OUTPUT_DIR}/{result.doc_id}.md")
         else:
             print(f"\n❌ 构建失败: {result.error_message}")
 
@@ -311,6 +322,9 @@ def main() -> Any:
   python -m src.main --upload docs/西游记.txt --book 西游记
   python -m src.main --upload docs/二创.txt --book 西游记 --source creative
 
+  # 调试模式：查看详细构建过程
+  python -m src.main --upload docs/test.txt --book 测试 --debug
+
   # 查询知识图谱
   python -m src.main --query "孙悟空的武器是什么"
   python -m src.main --query "孙悟空的朋友" --book 西游记
@@ -360,6 +374,11 @@ def main() -> Any:
         default="material",
         help="上传模式：来源类型（默认：material）",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="上传模式：启用调试模式，输出详细的构建过程报告",
+    )
 
     args = parser.parse_args()
 
@@ -370,6 +389,7 @@ def main() -> Any:
             file_path=args.upload,
             book=args.book,
             source=args.source,
+            debug=args.debug,
         ))
         return None
 
