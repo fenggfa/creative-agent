@@ -334,13 +334,8 @@ def main() -> Any:
         """,
     )
 
-    # 互斥组：创作任务 vs 上传文档 vs 查询
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "task",
-        nargs="*",
-        help="创作任务描述",
-    )
+    # 互斥组：上传文档 vs 查询 vs 列表
+    group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--upload",
         metavar="FILE",
@@ -355,6 +350,13 @@ def main() -> Any:
         "--list",
         action="store_true",
         help="列出所有知识图谱",
+    )
+
+    # 位置参数：创作任务（当没有指定其他模式时使用）
+    parser.add_argument(
+        "task",
+        nargs="*",
+        help="创作任务描述",
     )
 
     # 可选参数
@@ -381,6 +383,10 @@ def main() -> Any:
     )
 
     args = parser.parse_args()
+
+    # 检查是否提供了足够的参数
+    if not (args.upload or args.query or args.list or args.task):
+        parser.error("需要提供创作任务，或使用 --upload/--query/--list 之一")
 
     # 根据模式执行
     if args.upload:
